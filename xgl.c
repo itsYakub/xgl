@@ -1,55 +1,87 @@
 #include "xgl.h"
 
+/*	SECTION:
+ *		Platform checking
+ * */
+
 #if !defined __linux__
 # warning "WARN: Platform unsupported"
 #endif
+
+/*	SECTION:
+ *		Header inclusions
+ * */
+
+#include <stdio.h>
 #include <string.h>
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <X11/Xlib.h>
 
+/*	SECTION:
+ *		Local type definitions
+ * */
+
 typedef GLXFBConfig				t_fbconf;
 typedef XVisualInfo				*t_vinfo;
 typedef XSetWindowAttributes	t_swinattr;
-typedef XWindowAttributes		t_winattr;
 
 typedef GLXContext (* PFNGLXCREATECONTEXTATTRIBSARBPROC) (Display *, GLXFBConfig, GLXContext, Bool, const int *);
 PFNGLXCREATECONTEXTATTRIBSARBPROC	glXCreateContextAttribsARB;
+
+/*	SECTION:
+ *		Static function declarations
+ * */
 
 static int		__xgl_default_win_attr(int *);
 static int		__xgl_default_ctx_attr(int *);
 static t_fbconf	__xgl_gen_fbconfig(Display *, const int *);
 
+/*	SECTION:
+ *		Function definitions
+ * */
+
 int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	t_swinattr	_swinattr;
-	t_winattr	_winattr;
 	t_fbconf	_fbconf;
 	t_vinfo		_vi;
-	unsigned	_colmap;
-	unsigned	_rid;
 	int			_attr_win[32 * 2];
 	int			_attr_ctx[7];
 
 	if (!xw) {
 		return (0);
 	}
-	glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress((GLubyte *) "glXCreateContextAttribsARB");
+	
+	/*	Initializing all the values to zero.
+	 * */
+
 	xw = memset(xw, 0, sizeof(t_window));
 	memset(_attr_win, 0, sizeof(_attr_win));
+	memset(_attr_ctx, 0, sizeof(_attr_ctx));
 	__xgl_default_win_attr(_attr_win);
+	__xgl_default_ctx_attr(_attr_ctx);
+	glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress((GLubyte *) "glXCreateContextAttribsARB");
+	
+	/*	STEP 1. Creating an X11 Window
+	 *	- Connect to X11 server;
+	 *	- Generate an array of GLXFBConfigs and choose the best one;
+	 *	- Generate an XVisualInfo object based on the best GLXFBConfig;
+	 *	- Create a set of window attributes:
+	 *		- Generate a colormap for the window;
+	 *		- Setup an event mask;
+	 *	- Create a window object itself;
+	 *	- Set / Store the title of the window;
+	 * */
+
 	xw->dsp = XOpenDisplay(0);
-	_rid = DefaultRootWindow(xw->dsp);
 	_fbconf = __xgl_gen_fbconfig(xw->dsp, _attr_win);
 	_vi = glXGetVisualFromFBConfig(xw->dsp, _fbconf);
-	_colmap = XCreateColormap(xw->dsp, _rid, _vi->visual, None);
-	XGetWindowAttributes(xw->dsp, _rid, &_winattr);
-	_swinattr.colormap = _colmap;
-	_swinattr.background_pixmap = 0;
-	_swinattr.border_pixel = 0; 
+	memset(&_swinattr, 0, sizeof(t_swinattr));
+	_swinattr.colormap = XCreateColormap(xw->dsp, DefaultRootWindow(xw->dsp), _vi->visual, None);
 	_swinattr.event_mask = CWColormap | CWBorderPixel | CWBackPixel | CWEventMask;
 	xw->id = XCreateWindow(
 		xw->dsp,
-		_rid,
+		DefaultRootWindow(xw->dsp),
 		0, 0,
 		w, h, 0,
 		_vi->depth,
@@ -59,14 +91,42 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 		&_swinattr
 	);
 	XStoreName(xw->dsp, xw->id, t);
-	memset(_attr_ctx, 0, sizeof(_attr_ctx));
-	__xgl_default_ctx_attr(_attr_ctx);
+	
+	/*	STEP 2. Creating a GLX context
+	 *	- Load a glX context based on the OpenGL attributes and the best GLXFBConfig;
+	 *	- Make the context current;
+	 *	- Map the window to the screen;
+	 * */
+
 	xw->ctx = glXCreateContextAttribsARB(xw->dsp, _fbconf, 0, 1, _attr_ctx);
 	glXMakeCurrent(xw->dsp, xw->id, xw->ctx);
 	XMapWindow(xw->dsp, xw->id);
+
+	/*	STEP 3. Client Messages
+	 *	- Load a specific X11 atoms;
+	 *	- Set the protocols based on the atoms;
+	 * */
+
 	xw->s_atoms.atom_quit = XInternAtom(xw->dsp, "WM_DELETE_WINDOW", 0);
 	XSetWMProtocols(xw->dsp, xw->id, &xw->s_atoms.atom_quit, 1);
+
+	/*	STEP 4. Cleanup
+	 * */
+
 	XFree(_vi);
+
+	/*	BONUS STEP. Info logging
+	 * */
+	{
+		int	_glx_version_major;
+		int	_glx_version_minor;
+
+		glXQueryVersion(xw->dsp, &_glx_version_major, &_glx_version_minor);
+		fprintf(stdout, "[ xgl ] INFO: Window created successfully | Width: %d | Height: %d | ID: %lu\n", w, h, xw->id); 
+		fprintf(stdout, "[ xgl ] INFO: glX version: %d.%d\n", _glx_version_major, _glx_version_minor); 
+		fprintf(stdout, "[ xgl ] INFO: OpenGL version: %s\n", glGetString(GL_VERSION)); 
+	}
+
 	return (1);
 }
 
@@ -133,9 +193,12 @@ int	xgl_window_should_quit(t_window *xw) {
 
 int	xgl_window_quit(t_window *xw) {
 	glXDestroyContext(xw->dsp, xw->ctx);
+	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing glX context\n", xw->id); 
 	XUnmapWindow(xw->dsp, xw->id);
 	XDestroyWindow(xw->dsp, xw->id);
+	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing X11 window\n", xw->id); 
 	XCloseDisplay(xw->dsp);
+	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing X11 server connection\n", xw->id); 
 	return (1);
 }
 
@@ -176,20 +239,24 @@ int	xgl_window_make_current(t_window *xw) {
 	return (1);
 }
 
+/*	SECTION:
+ *		Static function definitions
+ * */
+
 static int		__xgl_default_win_attr(int *attr) {
 	int	i;
 
 	i = 0;
-	attr[i] = GLX_USE_GL;			attr[i + 1] = 1;				i += 2;
-	attr[i] = GLX_DOUBLEBUFFER;		attr[i + 1] = 1;				i += 2;
-	attr[i] = GLX_RED_SIZE;			attr[i + 1] = 8;				i += 2;
-	attr[i] = GLX_GREEN_SIZE;		attr[i + 1] = 8;				i += 2;
-	attr[i] = GLX_BLUE_SIZE;		attr[i + 1] = 8;				i += 2;
-	attr[i] = GLX_ALPHA_SIZE;		attr[i + 1] = 8;				i += 2;
-	attr[i] = GLX_DEPTH_SIZE;		attr[i + 1] = 24;				i += 2;
-	attr[i] = GLX_RENDER_TYPE;		attr[i + 1] = GLX_RGBA_BIT;		i += 2;
-	attr[i] = GLX_DRAWABLE_TYPE;	attr[i + 1] = GLX_WINDOW_BIT;	i += 2;
-    attr[i] = GLX_X_VISUAL_TYPE;	attr[i + 1] = GLX_TRUE_COLOR;	i += 2;
+	attr[i++] = GLX_USE_GL;			attr[i++] = 1;
+	attr[i++] = GLX_DOUBLEBUFFER;	attr[i++] = 1;
+	attr[i++] = GLX_RED_SIZE;		attr[i++] = 8;
+	attr[i++] = GLX_GREEN_SIZE;		attr[i++] = 8;
+	attr[i++] = GLX_BLUE_SIZE;		attr[i++] = 8;
+	attr[i++] = GLX_ALPHA_SIZE;		attr[i++] = 8;
+	attr[i++] = GLX_DEPTH_SIZE;		attr[i++] = 24;
+	attr[i++] = GLX_RENDER_TYPE;	attr[i++] = GLX_RGBA_BIT;
+	attr[i++] = GLX_DRAWABLE_TYPE;	attr[i++] = GLX_WINDOW_BIT;
+    attr[i++] = GLX_X_VISUAL_TYPE;	attr[i++] = GLX_TRUE_COLOR;
 	return (1);
 }
 static int		__xgl_default_ctx_attr(int *attr) {

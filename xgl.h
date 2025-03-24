@@ -1,9 +1,17 @@
 #if !defined _xgl_h_
 # define _xgl_h_
 
+/*	SECTION:
+ *		Platform checking
+ * */
+
 # if !defined __linux__
 #  warning "WARN: Platform unsupported"
 # endif
+
+/*	SECTION:
+ *		Header inclusions
+ * */
 
 # if !defined __cplusplus
 #  include <stdbool.h>
@@ -14,6 +22,10 @@
 extern "C" {
 
 # endif
+
+/*	SECTION:
+ *		Type definitions
+ * */
 
 struct s_window {
 	long unsigned	id;
@@ -27,6 +39,10 @@ struct s_window {
 };
 
 typedef struct s_window	t_window;
+
+/*	SECTION:
+ *		Function declarations
+ * */
 
 int	xgl_window_init(t_window *, unsigned, unsigned, const char *);
 int	xgl_window_poll_events(t_window *);

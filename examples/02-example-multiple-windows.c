@@ -9,8 +9,8 @@ int main(void) {
 	xgl_window_init(&w1, 800, 600, "Hello, xgl! (Window: 1)");
 	xgl_window_init(&w2, 800, 600, "Hello, xgl! (Window: 2)");
 	while (
-			!xgl_window_should_quit(&w0) ||
-			!xgl_window_should_quit(&w1) ||
+			!xgl_window_should_quit(&w0) &&
+			!xgl_window_should_quit(&w1) &&
 			!xgl_window_should_quit(&w2)
 		) {
 		{
