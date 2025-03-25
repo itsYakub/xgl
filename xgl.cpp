@@ -1,5 +1,4 @@
 #include "xgl.hpp"
-#include <X11/Xutil.h>
 
 /*	SECTION:
  *		Platform checking
