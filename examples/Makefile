@@ -1,26 +1,26 @@
-CC		= cc
-CFLAGS	= -Wall -Wextra -Werror -std=c99
-LFLAGS	= -lxgl -lX11 -lGL -lGLX
-LDFLAGS	= -L ..
+CXX			= c++
+CXXFLAGS	= -Wall -Wextra -Werror -std=c++11
+LXXFLAGS	= -lxgl -lX11 -lGL -lGLX
+LXXDFLAGS	= -L ..
 
 all : release
 
 .PHONY : release debug
 
-release : CFLAGS += -s -O3
+release : CXXFLAGS += -s -O3
 release : 00-example-window.out 01-example-clear-window.out 02-example-multiple-windows.out
 
-debug : CFLAGS += -ggdb -g3 -O0
+debug : CXXFLAGS += -ggdb -g3 -O0
 debug : 00-example-window.out 01-example-clear-window.out 02-example-multiple-windows.out
 
 00-example-window.out :
-	$(CC) $(CFLAGS) 00-example-window.c -o $@ $(LFLAGS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) 00-example-window.cpp -o $@ $(LXXFLAGS) $(LXXDFLAGS)
 
 01-example-clear-window.out :
-	$(CC) $(CFLAGS) 01-example-clear-window.c -o $@ $(LFLAGS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) 01-example-clear-window.cpp -o $@ $(LXXFLAGS) $(LXXDFLAGS)
 
 02-example-multiple-windows.out :
-	$(CC) $(CFLAGS) 02-example-multiple-windows.c -o $@ $(LFLAGS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) 02-example-multiple-windows.cpp -o $@ $(LXXFLAGS) $(LXXDFLAGS)
 
 .PHONY : clean
 

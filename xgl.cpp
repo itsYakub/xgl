@@ -1,4 +1,5 @@
-#include "xgl.h"
+#include "xgl.hpp"
+#include <X11/Xutil.h>
 
 /*	SECTION:
  *		Platform checking
@@ -12,8 +13,9 @@
  *		Header inclusions
  * */
 
-#include <stdio.h>
-#include <string.h>
+#include <array>
+#include <iostream>
+#include <cstring>
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <X11/Xlib.h>
@@ -22,10 +24,6 @@
  *		Local type definitions
  * */
 
-typedef GLXFBConfig				t_fbconf;
-typedef XVisualInfo				*t_vinfo;
-typedef XSetWindowAttributes	t_swinattr;
-
 typedef GLXContext (* PFNGLXCREATECONTEXTATTRIBSARBPROC) (Display *, GLXFBConfig, GLXContext, Bool, const int *);
 PFNGLXCREATECONTEXTATTRIBSARBPROC	glXCreateContextAttribsARB;
 
@@ -33,33 +31,49 @@ PFNGLXCREATECONTEXTATTRIBSARBPROC	glXCreateContextAttribsARB;
  *		Static function declarations
  * */
 
-static int		__xgl_default_win_attr(int *);
-static int		__xgl_default_ctx_attr(int *);
-static t_fbconf	__xgl_gen_fbconfig(Display *, const int *);
+static GLXFBConfig	__xgl_gen_fbconfig(Display *, const int *);
 
 /*	SECTION:
  *		Function definitions
  * */
+xgl::Window::Window(unsigned w, unsigned h, const std::string &t) : m_atom_quit(0), m_id(0), m_dsp(nullptr), m_ctx(nullptr), m_quit(false) {
+	this->init(w, h, t);
+}
 
-int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
-	t_swinattr	_swinattr;
-	t_fbconf	_fbconf;
-	t_vinfo		_vi;
-	int			_attr_win[32 * 2];
-	int			_attr_ctx[7];
+xgl::Window::Window(const xgl::Window &other) : 
+	m_atom_quit(other.m_atom_quit),
+	m_id(other.m_id),
+	m_dsp(other.m_dsp),
+	m_ctx(other.m_ctx),
+	m_quit(other.m_quit) { }
 
-	if (!xw) {
-		return (0);
-	}
-	
+xgl::Window::~Window(void) {
+	this->quit();
+}
+
+xgl::Window	&xgl::Window::operator=(const xgl::Window &other) {
+	this->m_atom_quit = other.m_atom_quit;
+	this->m_id = other.m_id;
+	this->m_dsp = other.m_dsp;
+	this->m_ctx = other.m_ctx;
+	this->m_quit = other.m_quit;
+	return (*this);
+}
+
+xgl::Window	&xgl::Window::init(unsigned w, unsigned h, const std::string &t) {
+	XSetWindowAttributes	_swinattr;
+	GLXFBConfig				_fbconf;
+	XVisualInfo				*_vi;
+	std::array<int, 32 * 2>	_attr_win;
+	std::array<int, 7>		_attr_ctx;
+
 	/*	Initializing all the values to zero.
 	 * */
 
-	xw = memset(xw, 0, sizeof(t_window));
-	memset(_attr_win, 0, sizeof(_attr_win));
-	memset(_attr_ctx, 0, sizeof(_attr_ctx));
-	__xgl_default_win_attr(_attr_win);
-	__xgl_default_ctx_attr(_attr_ctx);
+	_attr_win.fill(0);
+	_attr_ctx.fill(0);
+	this->default_window_properties(_attr_win);
+	this->default_context_properties(_attr_ctx);
 	glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress((GLubyte *) "glXCreateContextAttribsARB");
 	
 	/*	STEP 1. Creating an X11 Window
@@ -73,15 +87,15 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	 *	- Set / Store the title of the window;
 	 * */
 
-	xw->dsp = XOpenDisplay(0);
-	_fbconf = __xgl_gen_fbconfig(xw->dsp, _attr_win);
-	_vi = glXGetVisualFromFBConfig(xw->dsp, _fbconf);
-	memset(&_swinattr, 0, sizeof(t_swinattr));
-	_swinattr.colormap = XCreateColormap(xw->dsp, DefaultRootWindow(xw->dsp), _vi->visual, None);
+	this->m_dsp = XOpenDisplay(0);
+	_fbconf = __xgl_gen_fbconfig(static_cast<Display *>(this->m_dsp), _attr_win.data());
+	_vi = glXGetVisualFromFBConfig(static_cast<Display *>(this->m_dsp), _fbconf);
+	memset(&_swinattr, 0, sizeof(XSetWindowAttributes));
+	_swinattr.colormap = XCreateColormap(static_cast<Display *>(this->m_dsp), DefaultRootWindow(this->m_dsp), _vi->visual, None);
 	_swinattr.event_mask = CWColormap | CWBorderPixel | CWBackPixel | CWEventMask;
-	xw->id = XCreateWindow(
-		xw->dsp,
-		DefaultRootWindow(xw->dsp),
+	this->m_id = XCreateWindow(
+		static_cast<Display *>(this->m_dsp),
+		DefaultRootWindow(this->m_dsp),
 		0, 0,
 		w, h, 0,
 		_vi->depth,
@@ -90,7 +104,7 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 		CWColormap | CWBorderPixel | CWBackPixel | CWEventMask,
 		&_swinattr
 	);
-	XStoreName(xw->dsp, xw->id, t);
+	XStoreName(static_cast<Display *>(this->m_dsp), this->m_id, t.c_str());
 	
 	/*	STEP 2. Creating a GLX context
 	 *	- Load a glX context based on the OpenGL attributes and the best GLXFBConfig;
@@ -98,17 +112,17 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	 *	- Map the window to the screen;
 	 * */
 
-	xw->ctx = glXCreateContextAttribsARB(xw->dsp, _fbconf, 0, 1, _attr_ctx);
-	glXMakeCurrent(xw->dsp, xw->id, xw->ctx);
-	XMapWindow(xw->dsp, xw->id);
+	this->m_ctx = glXCreateContextAttribsARB(static_cast<Display *>(this->m_dsp), _fbconf, 0, 1, _attr_ctx.data());
+	glXMakeCurrent(static_cast<Display *>(this->m_dsp), this->m_id, static_cast<GLXContext>(this->m_ctx));
+	XMapWindow(static_cast<Display *>(this->m_dsp), this->m_id);
 
 	/*	STEP 3. Client Messages
 	 *	- Load a specific X11 atoms;
 	 *	- Set the protocols based on the atoms;
 	 * */
 
-	xw->s_atoms.atom_quit = XInternAtom(xw->dsp, "WM_DELETE_WINDOW", 0);
-	XSetWMProtocols(xw->dsp, xw->id, &xw->s_atoms.atom_quit, 1);
+	this->m_atom_quit = XInternAtom(static_cast<Display *>(this->m_dsp), "WM_DELETE_WINDOW", 0);
+	XSetWMProtocols(static_cast<Display *>(this->m_dsp), this->m_id, &this->m_atom_quit, 1);
 
 	/*	STEP 4. Cleanup
 	 * */
@@ -121,20 +135,20 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 		int	_glx_version_major;
 		int	_glx_version_minor;
 
-		glXQueryVersion(xw->dsp, &_glx_version_major, &_glx_version_minor);
-		fprintf(stdout, "[ xgl ] INFO: Window created successfully | Width: %d | Height: %d | ID: %lu\n", w, h, xw->id); 
-		fprintf(stdout, "[ xgl ] INFO: glX version: %d.%d\n", _glx_version_major, _glx_version_minor); 
-		fprintf(stdout, "[ xgl ] INFO: OpenGL version: %s\n", glGetString(GL_VERSION)); 
+		glXQueryVersion(static_cast<Display *>(this->m_dsp), &_glx_version_major, &_glx_version_minor);
+		std::cout << "[ xgl ] INFO: Window created successfully | Width: " << w << " | Height: " << h << " | ID: " << this->m_id << std::endl; 
+		std::cout << "[ xgl ] INFO: glX version: " << _glx_version_major << "." <<  _glx_version_minor << std::endl;
+		std::cout << "[ xgl ] INFO: OpenGL version: " <<  glGetString(GL_VERSION) << std::endl;
 	}
 
-	return (1);
+	return (*this);
 }
 
-int	xgl_window_poll_events(t_window *xw) {
+xgl::Window	&xgl::Window::poll_events(void) {
 	XEvent	_event;
 
-	while (XPending(xw->dsp)) {
-		XNextEvent(xw->dsp, &_event);
+	while (XPending(static_cast<Display *>(this->m_dsp))) {
+		XNextEvent(static_cast<Display *>(this->m_dsp), &_event);
 		switch (_event.type) {
 			case (KeyPress): { } break;
 			case (KeyRelease): { } break;
@@ -169,8 +183,8 @@ int	xgl_window_poll_events(t_window *xw) {
 			case (ColormapNotify): { } break;
 
 			case (ClientMessage): {
-				if ((Atom) _event.xclient.data.l[0] == xw->s_atoms.atom_quit) {
-					xw->quit = true;
+				if ((Atom) _event.xclient.data.l[0] == this->m_atom_quit) {
+					this->m_quit = true;
 				}					
 			} break;
 
@@ -179,36 +193,37 @@ int	xgl_window_poll_events(t_window *xw) {
 			default: { } break;
 		}
 	}
-	return (1);
+
+	return (*this);
 }
 
-int	xgl_window_swap_buffers(t_window *xw) {
-	glXSwapBuffers(xw->dsp, xw->id);
-	return (1);
+xgl::Window	&xgl::Window::swap_buffers(void) {
+	glXSwapBuffers(static_cast<Display *>(this->m_dsp), this->m_id);
+	return (*this);
 }
 
-int	xgl_window_should_quit(t_window *xw) {
-	return (xw->quit);
+bool	xgl::Window::should_quit(void) const {
+	return (this->m_quit);
 }
 
-int	xgl_window_quit(t_window *xw) {
-	glXDestroyContext(xw->dsp, xw->ctx);
-	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing glX context\n", xw->id); 
-	XUnmapWindow(xw->dsp, xw->id);
-	XDestroyWindow(xw->dsp, xw->id);
-	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing X11 window\n", xw->id); 
-	XCloseDisplay(xw->dsp);
-	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing X11 server connection\n", xw->id); 
-	return (1);
+xgl::Window	&xgl::Window::quit(void) {
+	glXDestroyContext(static_cast<Display *>(this->m_dsp), static_cast<GLXContext>(this->m_ctx));
+	std::cout << "[ xgl ] INFO: Window ID. " << this->m_id << ": Closing glX context" << std::endl; 
+	XUnmapWindow(static_cast<Display *>(this->m_dsp), this->m_id);
+	XDestroyWindow(static_cast<Display *>(this->m_dsp), this->m_id);
+	std::cout << "[ xgl ] INFO: Window ID. " << this->m_id << ": Closing X11 window" << std::endl; 
+	XCloseDisplay(static_cast<Display *>(this->m_dsp));
+	std::cout << "[ xgl ] INFO: Window ID. " << this->m_id << ": Closing X11 server connection" << std::endl; 
+	return (*this);
 }
 
-int	xgl_window_clear(float r, float g, float b, float a) {
+xgl::Window	&xgl::Window::clear(float r, float g, float b, float a) {
 	glClear(GL_COLOR_BUFFER_BIT);
 	glClearColor(r, g, b, a);
-	return (1);
+	return (*this);
 }
 
-int	xgl_window_clear_int(unsigned val) {
+xgl::Window	&xgl::Window::clear_int(unsigned val) {
 	float	_r;
 	float	_g;
 	float	_b;
@@ -231,19 +246,19 @@ int	xgl_window_clear_int(unsigned val) {
 #elif
 # warning "Unsuported endianess"
 #endif
-	return (xgl_window_clear(_r, _g, _b, _a));
+	return (this->clear(_r, _g, _b, _a));
 }
 
-int	xgl_window_make_current(t_window *xw) {
-	glXMakeCurrent(xw->dsp, xw->id, xw->ctx);
-	return (1);
+xgl::Window	&xgl::Window::make_current(void) {
+	glXMakeCurrent(static_cast<Display *>(this->m_dsp), this->m_id, static_cast<GLXContext>(this->m_ctx));
+	return (*this);
 }
 
 /*	SECTION:
  *		Static function definitions
  * */
 
-static int		__xgl_default_win_attr(int *attr) {
+void	xgl::Window::default_window_properties(std::array<int, 32 * 2> &attr) {
 	int	i;
 
 	i = 0;
@@ -257,24 +272,23 @@ static int		__xgl_default_win_attr(int *attr) {
 	attr[i++] = GLX_RENDER_TYPE;	attr[i++] = GLX_RGBA_BIT;
 	attr[i++] = GLX_DRAWABLE_TYPE;	attr[i++] = GLX_WINDOW_BIT;
     attr[i++] = GLX_X_VISUAL_TYPE;	attr[i++] = GLX_TRUE_COLOR;
-	return (1);
 }
-static int		__xgl_default_ctx_attr(int *attr) {
+
+void	xgl::Window::default_context_properties(std::array<int, 7> &attr) {
 	attr[0] = GLX_CONTEXT_PROFILE_MASK_ARB;		attr[1] = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
 	attr[2] = GLX_CONTEXT_MAJOR_VERSION_ARB;	attr[3] = 3;
 	attr[4] = GLX_CONTEXT_MINOR_VERSION_ARB;	attr[5] = 3;
-	return (1);
 }
 
-static t_fbconf	__xgl_gen_fbconfig(Display *dsp, const int *attr) {
-	t_fbconf*	_fbconf_arr;
-	t_fbconf	_fbconf_best;
-	t_vinfo		_vi;
-	int			_screen;
-	int			_fbconf_cnt;
-	int			_fbconf_best_index;
-	int			_fbconf_sample_buffers;
-	int			_fbconf_samples;
+static GLXFBConfig	__xgl_gen_fbconfig(Display *dsp, const int *attr) {
+	GLXFBConfig*	_fbconf_arr;
+	GLXFBConfig		_fbconf_best;
+	XVisualInfo		*_vi;
+	int				_screen;
+	int				_fbconf_cnt;
+	int				_fbconf_best_index;
+	int				_fbconf_sample_buffers;
+	int				_fbconf_samples;
 
 	_fbconf_best_index = -1;
 	_screen = DefaultScreen(dsp);

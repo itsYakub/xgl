@@ -1,27 +1,26 @@
-CC		= cc
-CFLAGS	= -Wall -Wextra -Werror -std=c99
-AR		= ar
-AFLAGS	= rcs
-SRC		= ./xgl.c
-OBJ		= $(SRC:.c=.o)
-LFLAGS	= -lX11
-NAME	= libxgl.a
+CXX			= c++
+CXXFLAGS	= -Wall -Wextra -Werror -std=c++11
+AR			= ar
+AFLAGS		= rcs
+SRC			= ./xgl.cpp
+OBJ			= $(SRC:.cpp=.obj)
+NAME		= libxgl.a
 
 all : release
 
 .PHONY : release debug
 
-release : CFLAGS += -s -O3
+release : CXXFLAGS += -s -O3
 release : $(NAME)
 
-debug : CFLAGS += -ggdb -g3 -O0
+debug : CXXFLAGS += -ggdb -g3 -O0
 debug : $(NAME)
 
 $(NAME) : $(OBJ)
 	$(AR) $(AFLAGS) $@ $^
 
-$(OBJ) : %.o : %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJ) : %.obj : %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 .PHONY : clean
 
