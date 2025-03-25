@@ -1,6 +1,7 @@
 # binaries
 
 *.o
+*.obj
 *.a
 *.so
 *.lib

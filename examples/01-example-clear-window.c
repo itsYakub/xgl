@@ -1,7 +1,5 @@
 #include "../xgl.h"
 
-#include <unistd.h>
-
 int main(void) {
 	t_window	window;
 
