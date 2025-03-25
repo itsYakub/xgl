@@ -47,7 +47,9 @@ GNU Make also allows you to install the library system - wide:
 
 $ sudo make install
 
-3. Dependencies:
+-----------------------------------------------
+
+Dependencies:
 
 xgl is free from any external dependencies.
 Internal dependencies of xgl are:
@@ -55,7 +57,9 @@ Internal dependencies of xgl are:
 - glX;
 - OpenGL;
 
-4. Licence:
+-----------------------------------------------
+
+LICENCE (lgpl):
 
 GNU LESSER GENERAL PUBLIC LICENSE
 Version 3, 29 June 2007
