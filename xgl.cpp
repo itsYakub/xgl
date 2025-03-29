@@ -18,6 +18,7 @@
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <X11/Xlib.h>
+#include <X11/XKBlib.h>
 
 /*	SECTION:
  *		Local type definitions
@@ -65,6 +66,7 @@ xgl::Window	&xgl::Window::init(unsigned w, unsigned h, const std::string &t) {
 	XVisualInfo				*_vi;
 	std::array<int, 32 * 2>	_attr_win;
 	std::array<int, 7>		_attr_ctx;
+	int						_winmask;
 
 	/*	Initializing all the values to zero.
 	 * */
@@ -74,6 +76,17 @@ xgl::Window	&xgl::Window::init(unsigned w, unsigned h, const std::string &t) {
 	this->default_window_properties(_attr_win);
 	this->default_context_properties(_attr_ctx);
 	glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress((GLubyte *) "glXCreateContextAttribsARB");
+	_winmask = 0;
+	_winmask |=
+		CWColormap
+		| CWBorderPixel
+		| CWBackPixel
+		| CWEventMask
+		| KeyPressMask
+		| KeyReleaseMask
+		| ButtonPressMask
+		| ButtonReleaseMask
+		| PointerMotionMask;
 	
 	/*	STEP 1. Creating an X11 Window
 	 *	- Connect to X11 server;
@@ -91,7 +104,7 @@ xgl::Window	&xgl::Window::init(unsigned w, unsigned h, const std::string &t) {
 	_vi = glXGetVisualFromFBConfig(static_cast<Display *>(this->m_dsp), _fbconf);
 	memset(&_swinattr, 0, sizeof(XSetWindowAttributes));
 	_swinattr.colormap = XCreateColormap(static_cast<Display *>(this->m_dsp), DefaultRootWindow(this->m_dsp), _vi->visual, None);
-	_swinattr.event_mask = CWColormap | CWBorderPixel | CWBackPixel | CWEventMask;
+	_swinattr.event_mask = _winmask; 
 	this->m_id = XCreateWindow(
 		static_cast<Display *>(this->m_dsp),
 		DefaultRootWindow(this->m_dsp),
@@ -100,7 +113,7 @@ xgl::Window	&xgl::Window::init(unsigned w, unsigned h, const std::string &t) {
 		_vi->depth,
 		InputOutput,
 		_vi->visual,
-		CWColormap | CWBorderPixel | CWBackPixel | CWEventMask,
+		_winmask,
 		&_swinattr
 	);
 	XStoreName(static_cast<Display *>(this->m_dsp), this->m_id, t.c_str());
@@ -149,11 +162,42 @@ xgl::Window	&xgl::Window::poll_events(void) {
 	while (XPending(static_cast<Display *>(this->m_dsp))) {
 		XNextEvent(static_cast<Display *>(this->m_dsp), &_event);
 		switch (_event.type) {
-			case (KeyPress): { } break;
-			case (KeyRelease): { } break;
-			case (ButtonPress): { } break;
-			case (ButtonRelease): { } break;
-			case (MotionNotify): { } break;
+			case (KeyPress): {
+				unsigned	_keysym;
+
+				if (!this->f_key) {
+					break;
+				}
+				_keysym = XkbKeycodeToKeysym(static_cast<Display *>(this->m_dsp), _event.xkey.keycode, 0, 0);
+				this->f_key(this->f_key_ptr, _keysym, 1);
+			} break;
+			case (KeyRelease): {
+				unsigned	_keysym;
+				
+				if (!this->f_key) {
+					break;
+				}
+				_keysym = XkbKeycodeToKeysym(static_cast<Display *>(this->m_dsp), _event.xkey.keycode, 0, 0);
+				this->f_key(this->f_key_ptr, _keysym, 0);
+			} break;
+			case (ButtonPress): {
+				if (!this->f_mouse) {
+					break;
+				}
+				this->f_mouse(this->f_mouse_ptr, _event.xbutton.button, 1);
+			} break;
+			case (ButtonRelease): {
+				if (!this->f_mouse) {
+					break;
+				}
+				this->f_mouse(this->f_mouse_ptr, _event.xbutton.button, 0);
+			} break;
+			case (MotionNotify): {
+				if (!this->f_mouse_motion) {
+					break;
+				}
+				this->f_mouse_motion(this->f_mouse_motion_ptr, _event.xmotion.x, _event.xmotion.y);
+			} break;
 			case (EnterNotify): { } break;
 			case (LeaveNotify): { } break;
 			case (FocusIn): { } break;
@@ -250,6 +294,24 @@ xgl::Window	&xgl::Window::clear_int(unsigned val) {
 
 xgl::Window	&xgl::Window::make_current(void) {
 	glXMakeCurrent(static_cast<Display *>(this->m_dsp), this->m_id, static_cast<GLXContext>(this->m_ctx));
+	return (*this);
+}
+
+xgl::Window	&xgl::Window::hook_key(int (*f)(void *, int, int), void *ptr) {
+	this->f_key = f;
+	this->f_key_ptr = ptr;
+	return (*this);
+}
+
+xgl::Window	&xgl::Window::hook_mouse(int (*f)(void *, int, int), void *ptr) {
+	this->f_mouse = f;
+	this->f_mouse_ptr = ptr;
+	return (*this);
+}
+
+xgl::Window	&xgl::Window::hook_mouse_motion(int (*f)(void *, int, int), void *ptr) {
+	this->f_mouse_motion = f;
+	this->f_mouse_motion_ptr = ptr;
 	return (*this);
 }
 
