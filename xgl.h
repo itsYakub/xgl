@@ -36,6 +36,15 @@ struct s_window {
 	struct {
 		long unsigned	atom_quit;
 	} s_atoms;
+
+	struct {
+		int		(*f_key)(void *, int, int);
+		int		(*f_mouse)(void *, int, int);
+		int		(*f_mouse_motion)(void *, int, int);
+		void	*f_key_ptr;
+		void	*f_mouse_ptr;
+		void	*f_mouse_motion_ptr;
+	} s_hooks;
 };
 
 typedef struct s_window	t_window;
@@ -52,6 +61,9 @@ int	xgl_window_quit(t_window *);
 int	xgl_window_clear(float, float, float, float);
 int	xgl_window_clear_int(unsigned);
 int	xgl_window_make_current(t_window *);
+int	xgl_window_hook_key(t_window *, int (*)(void *, int, int), void *);
+int	xgl_window_hook_mouse(t_window *, int (*)(void *, int, int), void *);
+int	xgl_window_hook_mouse_motion(t_window *, int (*)(void *, int, int), void *);
 
 # if defined __cplusplus
 

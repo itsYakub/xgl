@@ -12,11 +12,25 @@
  *		Header inclusions
  * */
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <X11/Xlib.h>
+#include <X11/XKBlib.h>
+
+/*	SECTION:
+ *		Macro Definition
+ * */
+
+#if !defined XGL_MIN
+# define XGL_MIN(a, b) ( a < b ? a : b )
+#endif
+
+#if !defined XGL_MAX
+# define XGL_MAX(a, b) ( a > b ? a : b )
+#endif
 
 /*	SECTION:
  *		Local type definitions
@@ -45,6 +59,7 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	t_swinattr	_swinattr;
 	t_fbconf	_fbconf;
 	t_vinfo		_vi;
+	int			_winmask;
 	int			_attr_win[32 * 2];
 	int			_attr_ctx[7];
 
@@ -60,6 +75,17 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	memset(_attr_ctx, 0, sizeof(_attr_ctx));
 	__xgl_default_win_attr(_attr_win);
 	__xgl_default_ctx_attr(_attr_ctx);
+	_winmask = 0;
+	_winmask |=
+		CWColormap
+		| CWBorderPixel
+		| CWBackPixel
+		| CWEventMask
+		| KeyPressMask
+		| KeyReleaseMask
+		| ButtonPressMask
+		| ButtonReleaseMask
+		| PointerMotionMask;
 	glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress((GLubyte *) "glXCreateContextAttribsARB");
 	
 	/*	STEP 1. Creating an X11 Window
@@ -78,7 +104,7 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	_vi = glXGetVisualFromFBConfig(xw->dsp, _fbconf);
 	memset(&_swinattr, 0, sizeof(t_swinattr));
 	_swinattr.colormap = XCreateColormap(xw->dsp, DefaultRootWindow(xw->dsp), _vi->visual, None);
-	_swinattr.event_mask = CWColormap | CWBorderPixel | CWBackPixel | CWEventMask;
+	_swinattr.event_mask = _winmask;
 	xw->id = XCreateWindow(
 		xw->dsp,
 		DefaultRootWindow(xw->dsp),
@@ -87,7 +113,7 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 		_vi->depth,
 		InputOutput,
 		_vi->visual,
-		CWColormap | CWBorderPixel | CWBackPixel | CWEventMask,
+		_winmask,
 		&_swinattr
 	);
 	XStoreName(xw->dsp, xw->id, t);
@@ -136,11 +162,42 @@ int	xgl_window_poll_events(t_window *xw) {
 	while (XPending(xw->dsp)) {
 		XNextEvent(xw->dsp, &_event);
 		switch (_event.type) {
-			case (KeyPress): { } break;
-			case (KeyRelease): { } break;
-			case (ButtonPress): { } break;
-			case (ButtonRelease): { } break;
-			case (MotionNotify): { } break;
+			case (KeyPress): {
+				unsigned	_keysym;
+
+				if (!xw->s_hooks.f_mouse_motion) {
+					break;
+				}
+				_keysym = XkbKeycodeToKeysym(xw->dsp, _event.xkey.keycode, 0, 0);
+				xw->s_hooks.f_key(xw->s_hooks.f_key_ptr, _keysym, 1);
+			} break;
+			case (KeyRelease): {
+				unsigned	_keysym;
+				
+				if (!xw->s_hooks.f_mouse_motion) {
+					break;
+				}
+				_keysym = XkbKeycodeToKeysym(xw->dsp, _event.xkey.keycode, 0, 0);
+				xw->s_hooks.f_key(xw->s_hooks.f_key_ptr, _keysym, 0);
+			} break;
+			case (ButtonPress): {
+				if (!xw->s_hooks.f_mouse_motion) {
+					break;
+				}
+				xw->s_hooks.f_mouse(xw->s_hooks.f_mouse_ptr, _event.xbutton.button, 1);
+			} break;
+			case (ButtonRelease): {
+				if (!xw->s_hooks.f_mouse_motion) {
+					break;
+				}
+				xw->s_hooks.f_mouse(xw->s_hooks.f_mouse_ptr, _event.xbutton.button, 0);
+			} break;
+			case (MotionNotify): {
+				if (!xw->s_hooks.f_mouse_motion) {
+					break;
+				}
+				xw->s_hooks.f_mouse_motion(xw->s_hooks.f_mouse_motion_ptr, _event.xmotion.x, _event.xmotion.y);
+			} break;
 			case (EnterNotify): { } break;
 			case (LeaveNotify): { } break;
 			case (FocusIn): { } break;
@@ -236,6 +293,24 @@ int	xgl_window_clear_int(unsigned val) {
 
 int	xgl_window_make_current(t_window *xw) {
 	glXMakeCurrent(xw->dsp, xw->id, xw->ctx);
+	return (1);
+}
+
+int	xgl_window_hook_key(t_window *xw, int (*f)(void *, int, int), void *ptr) {
+	xw->s_hooks.f_key = f;
+	xw->s_hooks.f_key_ptr = ptr;
+	return (1);
+}
+
+int	xgl_window_hook_mouse(t_window *xw, int (*f)(void *, int, int), void *ptr) {
+	xw->s_hooks.f_mouse = f;
+	xw->s_hooks.f_mouse_ptr = ptr;
+	return (1);
+}
+
+int	xgl_window_hook_mouse_motion(t_window *xw, int (*f)(void *, int, int), void *ptr) {
+	xw->s_hooks.f_mouse_motion = f;
+	xw->s_hooks.f_mouse_motion_ptr = ptr;
 	return (1);
 }
 
