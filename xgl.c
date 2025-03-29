@@ -165,7 +165,7 @@ int	xgl_window_poll_events(t_window *xw) {
 			case (KeyPress): {
 				unsigned	_keysym;
 
-				if (!xw->s_hooks.f_mouse_motion) {
+				if (!xw->s_hooks.f_key) {
 					break;
 				}
 				_keysym = XkbKeycodeToKeysym(xw->dsp, _event.xkey.keycode, 0, 0);
@@ -174,20 +174,20 @@ int	xgl_window_poll_events(t_window *xw) {
 			case (KeyRelease): {
 				unsigned	_keysym;
 				
-				if (!xw->s_hooks.f_mouse_motion) {
+				if (!xw->s_hooks.f_key) {
 					break;
 				}
 				_keysym = XkbKeycodeToKeysym(xw->dsp, _event.xkey.keycode, 0, 0);
 				xw->s_hooks.f_key(xw->s_hooks.f_key_ptr, _keysym, 0);
 			} break;
 			case (ButtonPress): {
-				if (!xw->s_hooks.f_mouse_motion) {
+				if (!xw->s_hooks.f_mouse) {
 					break;
 				}
 				xw->s_hooks.f_mouse(xw->s_hooks.f_mouse_ptr, _event.xbutton.button, 1);
 			} break;
 			case (ButtonRelease): {
-				if (!xw->s_hooks.f_mouse_motion) {
+				if (!xw->s_hooks.f_mouse) {
 					break;
 				}
 				xw->s_hooks.f_mouse(xw->s_hooks.f_mouse_ptr, _event.xbutton.button, 0);
