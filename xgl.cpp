@@ -36,7 +36,18 @@ static GLXFBConfig	__xgl_gen_fbconfig(Display *, const int *);
 /*	SECTION:
  *		Function definitions
  * */
-xgl::Window::Window(unsigned w, unsigned h, const std::string &t) : m_atom_quit(0), m_id(0), m_dsp(nullptr), m_ctx(nullptr), m_quit(false) {
+xgl::Window::Window(unsigned w, unsigned h, const std::string &t) :
+	m_atom_quit(0),
+	m_id(0),
+	m_dsp(nullptr),
+	m_ctx(nullptr),
+	m_quit(false),
+	f_key(nullptr),
+	f_mouse(nullptr),
+	f_mouse_motion(nullptr),
+	f_key_ptr(nullptr),
+	f_mouse_ptr(nullptr),
+	f_mouse_motion_ptr(nullptr) {
 	this->init(w, h, t);
 }
 
@@ -45,7 +56,13 @@ xgl::Window::Window(const xgl::Window &other) :
 	m_id(other.m_id),
 	m_dsp(other.m_dsp),
 	m_ctx(other.m_ctx),
-	m_quit(other.m_quit) { }
+	m_quit(other.m_quit),
+	f_key(other.f_key),
+	f_mouse(other.f_mouse),
+	f_mouse_motion(other.f_mouse_motion),
+	f_key_ptr(other.f_key_ptr),
+	f_mouse_ptr(other.f_mouse_ptr),
+	f_mouse_motion_ptr(other.f_mouse_motion_ptr) { }
 
 xgl::Window::~Window(void) {
 	this->quit();
