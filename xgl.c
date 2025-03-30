@@ -71,6 +71,7 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	 * */
 
 	xw = memset(xw, 0, sizeof(t_window));
+	memset(&xw->s_hooks, 0, sizeof(xw->s_hooks));
 	memset(_attr_win, 0, sizeof(_attr_win));
 	memset(_attr_ctx, 0, sizeof(_attr_ctx));
 	__xgl_default_win_attr(_attr_win);
