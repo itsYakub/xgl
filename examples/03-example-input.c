@@ -30,6 +30,7 @@ int main(void) {
 	xgl_window_hook_mouse_motion(&window, __xgl_mouse_motion_hook, NULL);
 	while (!xgl_window_should_quit(&window)) {
 		xgl_window_poll_events(&window);
+		xgl_window_clear_int(0xfa0808ff);
 		xgl_window_swap_buffers(&window);
 	}
 	xgl_window_quit(&window);

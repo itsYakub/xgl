@@ -38,13 +38,18 @@ struct s_window {
 	} s_atoms;
 
 	struct {
-		int		(*f_key)(void *, int, int);
-		int		(*f_mouse)(void *, int, int);
-		int		(*f_mouse_motion)(void *, int, int);
-		void	*f_key_ptr;
-		void	*f_mouse_ptr;
-		void	*f_mouse_motion_ptr;
+		int			(*f_key)(void *, int, int);
+		int			(*f_mouse)(void *, int, int);
+		int			(*f_mouse_motion)(void *, int, int);
+		void		*f_key_ptr;
+		void		*f_mouse_ptr;
+		void		*f_mouse_motion_ptr;
 	} s_hooks;
+
+	struct {
+		int			win[128];
+		int			ctx[7];
+	} s_attr;
 };
 
 typedef struct s_window	t_window;
@@ -64,6 +69,9 @@ int	xgl_window_make_current(t_window *);
 int	xgl_window_hook_key(t_window *, int (*)(void *, int, int), void *);
 int	xgl_window_hook_mouse(t_window *, int (*)(void *, int, int), void *);
 int	xgl_window_hook_mouse_motion(t_window *, int (*)(void *, int, int), void *);
+int	xgl_window_win_attr(t_window *, int, int);
+int	xgl_window_ctx_profile(t_window *, int);
+int	xgl_window_ctx_version(t_window *, int, int);
 
 # if defined __cplusplus
 

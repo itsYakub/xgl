@@ -17,6 +17,7 @@
 #include <string.h>
 #include <GL/gl.h>
 #include <GL/glx.h>
+#include <GL/glext.h>
 #include <X11/Xlib.h>
 #include <X11/XKBlib.h>
 
@@ -30,6 +31,18 @@
 
 #if !defined XGL_MAX
 # define XGL_MAX(a, b) ( a > b ? a : b )
+#endif
+
+#if !defined XGL_LOGI
+# define XGL_LOGI(...) ( fprintf(stdout, "[ xgl ] INFO: "__VA_ARGS__) )
+#endif
+
+#if !defined XGL_LOGW
+# define XGL_LOGW(...) ( fprintf(stderr, "[ xgl ] WARN: "__VA_ARGS__) )
+#endif
+
+#if !defined XGL_LOGE
+# define XGL_LOGE(...) ( fprintf(stderr, "[ xgl ] ERR: "__VA_ARGS__) )
 #endif
 
 /*	SECTION:
@@ -47,8 +60,6 @@ PFNGLXCREATECONTEXTATTRIBSARBPROC	glXCreateContextAttribsARB;
  *		Static function declarations
  * */
 
-static int		__xgl_default_win_attr(int *);
-static int		__xgl_default_ctx_attr(int *);
 static t_fbconf	__xgl_gen_fbconfig(Display *, const int *);
 
 /*	SECTION:
@@ -60,8 +71,6 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	t_fbconf	_fbconf;
 	t_vinfo		_vi;
 	int			_winmask;
-	int			_attr_win[32 * 2];
-	int			_attr_ctx[7];
 
 	if (!xw) {
 		return (0);
@@ -72,10 +81,6 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 
 	xw = memset(xw, 0, sizeof(t_window));
 	memset(&xw->s_hooks, 0, sizeof(xw->s_hooks));
-	memset(_attr_win, 0, sizeof(_attr_win));
-	memset(_attr_ctx, 0, sizeof(_attr_ctx));
-	__xgl_default_win_attr(_attr_win);
-	__xgl_default_ctx_attr(_attr_ctx);
 	_winmask = 0;
 	_winmask |=
 		CWColormap
@@ -87,9 +92,27 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 		| ButtonPressMask
 		| ButtonReleaseMask
 		| PointerMotionMask;
-	glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress((GLubyte *) "glXCreateContextAttribsARB");
 	
-	/*	STEP 1. Creating an X11 Window
+	/*	SETP 1. Set window and context attributes
+	 * */
+
+	/*	Main GLX configuration attributes
+	 * */
+
+	xgl_window_win_attr(xw, GLX_USE_GL, 1);
+	xgl_window_win_attr(xw, GLX_X_RENDERABLE, 1);
+	xgl_window_win_attr(xw, GLX_DOUBLEBUFFER, 1);
+	xgl_window_win_attr(xw, GLX_RED_SIZE, 8);
+	xgl_window_win_attr(xw, GLX_GREEN_SIZE, 8);
+	xgl_window_win_attr(xw, GLX_BLUE_SIZE, 8);
+	xgl_window_win_attr(xw, GLX_ALPHA_SIZE, 8);
+	xgl_window_win_attr(xw, GLX_STENCIL_SIZE, 8);
+	xgl_window_win_attr(xw, GLX_DEPTH_SIZE, 24);
+	xgl_window_win_attr(xw, GLX_RENDER_TYPE, GLX_RGBA_BIT);
+	xgl_window_win_attr(xw, GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT);
+	xgl_window_win_attr(xw, GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR);
+
+	/*	STEP 2. Creating an X11 Window
 	 *	- Connect to X11 server;
 	 *	- Generate an array of GLXFBConfigs and choose the best one;
 	 *	- Generate an XVisualInfo object based on the best GLXFBConfig;
@@ -101,8 +124,17 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	 * */
 
 	xw->dsp = XOpenDisplay(0);
-	_fbconf = __xgl_gen_fbconfig(xw->dsp, _attr_win);
+	if (!xw->dsp) {
+		return (!XGL_LOGE("Couldn't open an X11 display. Connection failed\n"));
+	}
+	_fbconf = __xgl_gen_fbconfig(xw->dsp, xw->s_attr.win);
+	if (!_fbconf) {
+		return (!XGL_LOGE("Couldn't create GLX Framebuffer Config\n"));
+	}
 	_vi = glXGetVisualFromFBConfig(xw->dsp, _fbconf);
+	if (!_vi) {
+		return (!XGL_LOGE("Couldn't create an X11 visual info\n"));
+	}
 	memset(&_swinattr, 0, sizeof(t_swinattr));
 	_swinattr.colormap = XCreateColormap(xw->dsp, DefaultRootWindow(xw->dsp), _vi->visual, None);
 	_swinattr.event_mask = _winmask;
@@ -117,19 +149,39 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 		_winmask,
 		&_swinattr
 	);
+	if (!xw->id) {
+		return (!XGL_LOGE("Couldn't create an X11 window\n"));
+	}
 	XStoreName(xw->dsp, xw->id, t);
 	
-	/*	STEP 2. Creating a GLX context
+	/*	STEP 3. Creating a GLX context
 	 *	- Load a glX context based on the OpenGL attributes and the best GLXFBConfig;
 	 *	- Make the context current;
 	 *	- Map the window to the screen;
 	 * */
 
-	xw->ctx = glXCreateContextAttribsARB(xw->dsp, _fbconf, 0, 1, _attr_ctx);
-	glXMakeCurrent(xw->dsp, xw->id, xw->ctx);
-	XMapWindow(xw->dsp, xw->id);
+	/*	Main OpenGL configuration attributes
+	 * */
+	
+	xgl_window_ctx_profile(xw, GLX_CONTEXT_CORE_PROFILE_BIT_ARB);
+	xgl_window_ctx_version(xw, 3, 3);
 
-	/*	STEP 3. Client Messages
+	glXCreateContextAttribsARB = (PFNGLXCREATECONTEXTATTRIBSARBPROC) glXGetProcAddress((GLubyte *) "glXCreateContextAttribsARB");
+	if (glXCreateContextAttribsARB) {
+		xw->ctx = glXCreateContextAttribsARB(xw->dsp, _fbconf, 0, 1, xw->s_attr.ctx);
+		if (!xw->ctx) {
+			return (!XGL_LOGE("GLX Context creation failed\n"));
+		}
+	}
+	else {
+		xw->ctx = glXCreateContext(xw->dsp, _vi, 0, 1);
+		if (!xw->ctx) {
+			return (!XGL_LOGE("GLX Context creation failed\n"));
+		}
+	}
+	xgl_window_make_current(xw);
+
+	/*	STEP 4. Client Messages
 	 *	- Load a specific X11 atoms;
 	 *	- Set the protocols based on the atoms;
 	 * */
@@ -137,7 +189,7 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	xw->s_atoms.atom_quit = XInternAtom(xw->dsp, "WM_DELETE_WINDOW", 0);
 	XSetWMProtocols(xw->dsp, xw->id, &xw->s_atoms.atom_quit, 1);
 
-	/*	STEP 4. Cleanup
+	/*	STEP 5. Cleanup
 	 * */
 
 	XFree(_vi);
@@ -147,11 +199,16 @@ int	xgl_window_init(t_window *xw, unsigned w, unsigned h, const char *t) {
 	{
 		int	_glx_version_major;
 		int	_glx_version_minor;
+		int	_gl_version_major;
+		int	_gl_version_minor;
 
 		glXQueryVersion(xw->dsp, &_glx_version_major, &_glx_version_minor);
-		fprintf(stdout, "[ xgl ] INFO: Window created successfully | Width: %d | Height: %d | ID: %lu\n", w, h, xw->id); 
-		fprintf(stdout, "[ xgl ] INFO: glX version: %d.%d\n", _glx_version_major, _glx_version_minor); 
-		fprintf(stdout, "[ xgl ] INFO: OpenGL version: %s\n", glGetString(GL_VERSION)); 
+		glGetIntegerv(GL_MAJOR_VERSION, &_gl_version_major);
+		glGetIntegerv(GL_MINOR_VERSION, &_gl_version_minor);
+		XGL_LOGI("Window created successfully | Width: %d | Height: %d | ID: %lu\n", w, h, xw->id); 
+		XGL_LOGI("GLX version: %d.%d\n", _glx_version_major, _glx_version_minor); 
+		XGL_LOGI("OpenGL version: %d.%d\n", _gl_version_major, _gl_version_minor);
+		XGL_LOGI("OpenGL vendor: %s\n", glGetString(GL_VENDOR));
 	}
 
 	return (1);
@@ -251,18 +308,24 @@ int	xgl_window_should_quit(t_window *xw) {
 
 int	xgl_window_quit(t_window *xw) {
 	glXDestroyContext(xw->dsp, xw->ctx);
-	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing glX context\n", xw->id); 
+	XGL_LOGI("Window ID. %lu: Closing GLX context\n", xw->id); 
 	XUnmapWindow(xw->dsp, xw->id);
 	XDestroyWindow(xw->dsp, xw->id);
-	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing X11 window\n", xw->id); 
+	XGL_LOGI("Window ID. %lu: Closing X11 window\n", xw->id); 
 	XCloseDisplay(xw->dsp);
-	fprintf(stdout, "[ xgl ] INFO: Window ID. %lu: Closing X11 server connection\n", xw->id); 
+	XGL_LOGI("Window ID. %lu: Closing X11 server connection\n", xw->id); 
 	return (1);
 }
 
 int	xgl_window_clear(float r, float g, float b, float a) {
-	glClear(GL_COLOR_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	if (glGetError() != GL_NO_ERROR) {
+		return (!XGL_LOGE("%s\n", glGetString(glGetError())));
+	}
 	glClearColor(r, g, b, a);
+	if (glGetError() != GL_NO_ERROR) {
+		return (!XGL_LOGE("%s\n", glGetString(glGetError())));
+	}
 	return (1);
 }
 
@@ -289,11 +352,16 @@ int	xgl_window_clear_int(unsigned val) {
 #elif
 # warning "Unsuported endianess"
 #endif
+
 	return (xgl_window_clear(_r, _g, _b, _a));
 }
 
 int	xgl_window_make_current(t_window *xw) {
-	glXMakeCurrent(xw->dsp, xw->id, xw->ctx);
+	XMapWindow(xw->dsp, xw->id);
+	if (!glXMakeCurrent(xw->dsp, xw->id, xw->ctx)) {
+		XGL_LOGE("Failed to set the current context | ID: %lu\n", xw->id);
+		return (0);
+	}
 	return (1);
 }
 
@@ -315,32 +383,49 @@ int	xgl_window_hook_mouse_motion(t_window *xw, int (*f)(void *, int, int), void 
 	return (1);
 }
 
+int	xgl_window_win_attr(t_window *xw, int attr, int val) {
+	for (int i = 0; i < (int) sizeof(xw->s_attr.win); i += 2) {
+		if (xw->s_attr.win[i] == attr) {
+			return (1);
+		}
+		else if (!xw->s_attr.win[i]) {
+			xw->s_attr.win[i] = attr;
+			xw->s_attr.win[i + 1] = val;
+			return (1);
+		}
+	}
+	return (!XGL_LOGW("Invalid attribute: %d\n", attr));
+}
+
+int	xgl_window_ctx_profile(t_window *xw, int profile) {
+	if (profile != GLX_CONTEXT_CORE_PROFILE_BIT_ARB &&
+		profile != GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB) {
+		return (!XGL_LOGW("Invalid OpenGL profile: %d\n", profile));
+	}
+	xw->s_attr.ctx[0] = GLX_CONTEXT_PROFILE_MASK_ARB;
+	if (!xw->s_attr.ctx[1]) {
+		xw->s_attr.ctx[1] = profile;
+	}
+	return (1);
+}
+
+int	xgl_window_ctx_version(t_window *xw, int major, int minor) {
+	if (major || minor) {
+		xw->s_attr.ctx[2] = GLX_CONTEXT_MAJOR_VERSION_ARB;
+		if (!xw->s_attr.ctx[3]) {
+			xw->s_attr.ctx[3] = major;
+		}
+		xw->s_attr.ctx[4] = GLX_CONTEXT_MINOR_VERSION_ARB;
+		if (!xw->s_attr.ctx[5]) {
+			xw->s_attr.ctx[5] = minor;
+		}
+	}
+	return (1);
+}
+
 /*	SECTION:
  *		Static function definitions
  * */
-
-static int		__xgl_default_win_attr(int *attr) {
-	int	i;
-
-	i = 0;
-	attr[i++] = GLX_USE_GL;			attr[i++] = 1;
-	attr[i++] = GLX_DOUBLEBUFFER;	attr[i++] = 1;
-	attr[i++] = GLX_RED_SIZE;		attr[i++] = 8;
-	attr[i++] = GLX_GREEN_SIZE;		attr[i++] = 8;
-	attr[i++] = GLX_BLUE_SIZE;		attr[i++] = 8;
-	attr[i++] = GLX_ALPHA_SIZE;		attr[i++] = 8;
-	attr[i++] = GLX_DEPTH_SIZE;		attr[i++] = 24;
-	attr[i++] = GLX_RENDER_TYPE;	attr[i++] = GLX_RGBA_BIT;
-	attr[i++] = GLX_DRAWABLE_TYPE;	attr[i++] = GLX_WINDOW_BIT;
-    attr[i++] = GLX_X_VISUAL_TYPE;	attr[i++] = GLX_TRUE_COLOR;
-	return (1);
-}
-static int		__xgl_default_ctx_attr(int *attr) {
-	attr[0] = GLX_CONTEXT_PROFILE_MASK_ARB;		attr[1] = GLX_CONTEXT_CORE_PROFILE_BIT_ARB;
-	attr[2] = GLX_CONTEXT_MAJOR_VERSION_ARB;	attr[3] = 3;
-	attr[4] = GLX_CONTEXT_MINOR_VERSION_ARB;	attr[5] = 3;
-	return (1);
-}
 
 static t_fbconf	__xgl_gen_fbconfig(Display *dsp, const int *attr) {
 	t_fbconf*	_fbconf_arr;
